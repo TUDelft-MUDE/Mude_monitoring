@@ -32,40 +32,25 @@ jobs:
           npm ci
           npm run build
 
-  # ── 2. Deploy to edu01 over SSH (via the student-linux jump host) ───
+  # ── 2. Deploy on edu01 via a self-hosted runner ────────────────────
   # Runs only on pushes to main (not PRs) and manual dispatches.
   #
-  # Path: GitHub runner ──SSH key──▶ student-linux.tudelft.nl (public gateway)
-  #                       ──tunnel─▶ edu01.citg.tudelft.nl   (internal)
+  # GitHub-hosted runners cannot reach edu01 (the student-linux gateway
+  # filters by source IP and times out cloud/foreign IPs). Instead, a
+  # self-hosted runner registered ON edu01 polls GitHub over an OUTBOUND
+  # connection and runs the deploy locally — no inbound SSH, no jump host,
+  # no secrets needed. See README → "CI/CD pipeline" for runner setup.
   #
-  # TU Delft home dirs are shared (NFS), so one public key in
-  # ~/.ssh/authorized_keys authenticates BOTH hops with the same private key.
-  #
-  # Required repository SECRETS (Settings → Secrets and variables → Actions
-  # → Secrets tab — NOT Variables, those are plaintext):
-  #   SSH_USER       your NetID (e.g. kwangjinlee)
-  #   DEPLOY_SSH_KEY a *private* deploy key (its public half is appended to
-  #                  ~/.ssh/authorized_keys on student-linux/edu01)
+  # The runner is registered with the custom label `edu01` and runs as the
+  # deploy user, so it has docker-group access and owns ~/Mude_monitoring
+  # (which holds the untracked .env). deploy.sh itself git-pulls origin/main.
   deploy:
     needs: build
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, edu01]
     steps:
-      - name: Deploy over SSH (jump host → edu01)
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          # Final target — the script below runs here, on edu01.
-          host: edu01.citg.tudelft.nl
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          # Jump host — the public TU Delft SSH gateway.
-          proxy_host: student-linux.tudelft.nl
-          proxy_username: ${{ secrets.SSH_USER }}
-          proxy_key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            set -e
-            if [ ! -d ~/Mude_monitoring ]; then
-              git clone https://github.com/TUDelft-MUDE/Mude_monitoring.git ~/Mude_monitoring
-            fi
-            cd ~/Mude_monitoring
-            ./deploy.sh
+      - name: Deploy on edu01
+        run: |
+          set -e
+          cd ~/Mude_monitoring
+          ./deploy.sh

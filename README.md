@@ -117,52 +117,55 @@ docker compose logs -f backend
 This repo ships a GitHub Actions workflow (`.github/workflows/deploy.yml`) with
 two jobs:
 
-1. **build** — runs on every push and PR. Installs and builds both the backend
-   (`tsc`) and frontend (`tsc && vite build`) on the runner so a broken build is
-   caught before it ever reaches the server.
-2. **deploy** — runs only on pushes to `main` (and manual *Run workflow*). It
-   SSHes to edu01 **through the `student-linux.tudelft.nl` jump host** and runs
-   `./deploy.sh`, cloning the repo first if needed.
+1. **build** — runs on every push and PR on a GitHub-hosted `ubuntu-latest`
+   runner. Installs and builds both the backend (`tsc`) and frontend
+   (`tsc && vite build`) so a broken build is caught before it reaches the
+   server.
+2. **deploy** — runs only on pushes to `main` (and manual *Run workflow*), on a
+   **self-hosted runner on edu01**. It simply runs `./deploy.sh` locally, which
+   git-pulls `origin/main`, rebuilds, and health-checks.
+
+### Why a self-hosted runner
+
+GitHub-hosted runners connect from public cloud IPs, and the
+`student-linux.tudelft.nl` gateway filters by source IP — connections from
+those runners time out (`dial tcp …:22: i/o timeout`). So SSH-from-the-runner
+is a dead end. Instead, a runner installed **on edu01** dials *out* to GitHub
+(only outbound is needed, which the campus firewall allows) and executes the
+deploy locally — no inbound SSH, no jump host, no secrets.
 
 ```
-GitHub runner ──SSH key──▶ student-linux.tudelft.nl  (public gateway)
-              ──tunnel───▶ edu01.citg.tudelft.nl     (internal)
+edu01  ──outbound HTTPS──▶  GitHub  (runner polls for jobs)
+   └─ runs ./deploy.sh locally on the same host
 ```
 
-`student-linux` is TU Delft's public SSH gateway, so the runner can reach it
-from the internet — that's how this avoids needing a VPN. TU Delft home
-directories are shared (NFS), so a **single** public key in
-`~/.ssh/authorized_keys` authenticates **both** hops with the same private key.
+### Register the runner on edu01
 
-### Secrets to configure
-
-In **Settings → Secrets and variables → Actions → Secrets tab** (NOT *Variables*
-— those are plaintext and would leak the key), add:
-
-| Secret | Value |
-|--------|-------|
-| `SSH_USER` | your NetID (e.g. `kwangjinlee`) |
-| `DEPLOY_SSH_KEY` | a **private** deploy key (PEM contents, multi-line) |
-
-Generate a dedicated deploy key and install its public half once:
+In **Settings → Actions → Runners → New self-hosted runner** (Linux x64), GitHub
+shows a `./config.sh` command with a one-time token. Run it on edu01 and give it
+the label `edu01` (matching `runs-on: [self-hosted, edu01]` in the workflow):
 
 ```bash
-# On your laptop — create a passphrase-less keypair for CI
-ssh-keygen -t ed25519 -f edu01_deploy -C "github-actions-deploy" -N ""
+# On edu01, in your home dir
+mkdir -p ~/actions-runner && cd ~/actions-runner
+# (paste the download + tar commands GitHub gives you, then:)
+./config.sh --url https://github.com/TUDelft-MUDE/Mude_monitoring \
+            --token <ONE_TIME_TOKEN> --labels edu01 --unattended
 
-# Append the PUBLIC key to authorized_keys on the gateway. Because home is
-# shared over NFS, this also authorizes edu01 with the same key:
-ssh-copy-id -i edu01_deploy.pub <netid>@student-linux.tudelft.nl
-# (If home is NOT shared, also run ssh-copy-id against edu01 from the gateway.)
-
-# Paste the PRIVATE key file (edu01_deploy, the whole file incl. BEGIN/END
-# lines) into the DEPLOY_SSH_KEY secret. Set SSH_USER to your NetID.
+# Keep it running across logout/reboot as a systemd service (needs sudo):
+sudo ./svc.sh install $(whoami)
+sudo ./svc.sh start
 ```
 
-> **Never put your NetID password in GitHub.** Use the deploy key above. If your
-> account enforces 2FA on SSH, automated deploy won't work at all — register a
-> **self-hosted runner** on a campus machine, or just run `./deploy.sh` on edu01
-> manually (the build job still protects `main`).
+The runner runs as your user, so it has `docker`-group access and owns
+`~/Mude_monitoring` (with its untracked `.env`). Nothing else to configure —
+push to `main` and the deploy job fires.
+
+> **Public-repo caution:** a self-hosted runner on a public repo can be abused by
+> malicious fork PRs. This is mitigated here because the **build** job runs on
+> GitHub-hosted runners and the **deploy** job is gated to `push` on `main`
+> (never `pull_request`). Keep *Settings → Actions → Fork pull request workflows*
+> set to **require approval**, and don't loosen the deploy job's `if:` guard.
 
 ---
 
