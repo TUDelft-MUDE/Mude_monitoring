@@ -20,6 +20,9 @@ backup*.db
 *.log
 npm-debug.log*
 
+# Self-hosted GitHub Actions runner (installed under the repo on edu01)
+actions-runner/
+
 # OS / editor
 .DS_Store
 *.swp
