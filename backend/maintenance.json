@@ -1,0 +1,11 @@
+{
+  "windows": [
+    {
+      "description": "Weekend server cleaning",
+      "days": [0, 6],
+      "start": "00:00",
+      "end": "23:59",
+      "timezone": "Europe/Amsterdam"
+    }
+  ]
+}
