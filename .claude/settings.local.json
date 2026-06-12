@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker --version)",
+      "Bash(npm ci *)",
+      "Bash(npm run *)",
+      "Bash(echo \"BACKEND_BUILD_EXIT=$?\")",
+      "Bash(echo \"FRONTEND_BUILD_EXIT=$?\")",
+      "Bash(DB_PATH=/tmp/smoke_test.db PORT=3009 timeout 8 node dist/index.js)",
+      "Bash(chmod +x deploy.sh)",
+      "Bash(bash -n deploy.sh)",
+      "Bash(python3 -c \"import yaml,sys; yaml.safe_load\\(open\\('.github/workflows/deploy.yml'\\)\\); print\\('workflow YAML valid'\\)\")",
+      "Bash(python3 -c \"import yaml; yaml.safe_load\\(open\\('.github/workflows/deploy.yml'\\)\\); print\\('workflow YAML valid'\\)\")",
+      "Bash(tar --exclude='./.git' --exclude='node_modules' --exclude='dist' --exclude='.DS_Store' --exclude='*.db' --exclude='.claude' -czf /tmp/mude_deploy.tgz .)",
+      "Read(//tmp/**)",
+      "Bash(tar tzf *)",
+      "Bash(grep -E '\\\\.\\(sh|yml|example|json|ts|tsx\\)$|Dockerfile')",
+      "Bash(cat ~/.ssh/config 2>/dev/null && echo \"---EXISTS---\" || echo \"NO ~/.ssh/config YET\")",
+      "Bash(dig +short edu01.citg.tudelft.nl A)",
+      "Bash(nslookup edu01.citg.tudelft.nl)",
+      "Bash(dig +short mude-monitoring.citg.tudelft.nl)"
+    ]
+  }
+}

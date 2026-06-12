@@ -1,0 +1,27 @@
+# Secrets — never commit
+.env
+.env.local
+*.env
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+backend/dist/
+frontend/dist/
+
+# SQLite database / backups
+*.db
+*.db-journal
+backup*.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

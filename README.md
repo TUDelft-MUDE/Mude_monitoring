@@ -1,15 +1,15 @@
 # MUDE Platform Monitor — School Server Edition
 
 Uptime monitoring dashboard for TU Delft MUDE course infrastructure, packaged for
-deployment on a **university Linux server** instead of AWS. Same functionality as
-the AWS edition (HTTP checks every 5 minutes, uptime history, public status page,
-DOWN/UP alerts), but with **no AWS dependency**:
+deployment on the university Linux server **`edu01.citg.tudelft.nl`** instead of
+AWS. Same functionality as the AWS edition (HTTP checks every 5 minutes, uptime
+history, public status page, DOWN/UP alerts), but with **no AWS dependency**:
 
-| AWS edition | School edition |
-|-------------|----------------|
+| AWS edition | School edition (this repo) |
+|-------------|----------------------------|
 | Email alerts via AWS SNS | Email alerts via **SMTP** (`nodemailer`) |
 | SNS subscription confirmation flow | Plain recipient list in `alerts.json` — no confirmation |
-| Deployed on EC2 (Terraform) | Deployed on a school Linux server (Docker Compose) |
+| Deployed on EC2 (Terraform) | Deployed on edu01 (Docker Compose) |
 | IAM instance profile | Just SMTP credentials in `.env` |
 
 Everything else — backend API, SQLite storage, the React dashboard, the public
@@ -27,72 +27,142 @@ Browser (HTTPS)
   │    ├── HTTP 80 → redirect to HTTPS
   │    └── HTTPS 443 → proxy → localhost:3000
   │
-  │  Docker: nginx (localhost:3000, internal only)
+  │  Docker: nginx (127.0.0.1:3000, internal only)
   │    ├── GET /           → React dashboard (API key required for writes)
   │    ├── GET /status     → React public status page (read-only)
-  │    └── /api/*          → proxy → Express backend (localhost:3001)
+  │    └── /api/*          → proxy → Express backend (127.0.0.1:3001)
   │
-  └── Docker: Express API (localhost:3001, internal only)
-        ├── SQLite database  (/app/data/monitoring.db, Docker volume)
+  └── Docker: Express API (127.0.0.1:3001, internal only)
+        ├── SQLite database  (/app/data/monitoring.db, Docker volume db_data)
         ├── Cron checker     (runs every 5 minutes)
         ├── SMTP relay       (email alerts — university or Gmail)
         └── Teams webhook    (optional)
 ```
 
----
-
-## Why SMTP works on a school server
-
-The server does **not** run its own mail server. The Node app only makes an
-**outbound** connection to an SMTP relay. Two common options:
-
-1. **University SMTP relay** (e.g. `smtp.tudelft.nl:587`) — inside the campus
-   network this often needs no authentication, or your normal account login.
-2. **Gmail SMTP** (`smtp.gmail.com:587` + a 16-char [app password](https://myaccount.google.com/apppasswords))
-   — works from anywhere.
-
-The only requirement is that the firewall allows outbound port **587** (STARTTLS)
-or **465** (implicit TLS), which is the default on virtually all campus networks.
+Both containers bind to `127.0.0.1` only — nothing is exposed to the network
+until you put a reverse proxy (host nginx / campus proxy) in front of port 3000.
 
 ---
 
-## Prerequisites
+## Repository layout
 
-- A Linux server with **Docker** and **Docker Compose** installed
-- An SMTP relay you can send through (see above)
-- A DNS name pointing at the server (for HTTPS) — optional but recommended
+```
+.
+├── backend/            Express + SQLite API and the 5-minute checker
+│   ├── targets.json    Seed list of URLs to monitor
+│   ├── alerts.json     Email recipients for DOWN/UP alerts
+│   └── maintenance.json  Windows during which alerts are suppressed
+├── frontend/           React dashboard + public status page (served by nginx)
+├── docker-compose.yml  Two services: backend (3001) + frontend (3000)
+├── deploy.sh           Build & (re)start the stack on the server
+├── .env.example        Template for the secrets file (copy to .env)
+└── .github/workflows/deploy.yml   CI build + SSH deploy to edu01
+```
 
 ---
 
-## Quick start
+## Prerequisites on edu01
+
+- Docker and the Docker Compose plugin (`docker compose version` works)
+- Permission to run Docker (your user is in the `docker` group, or you can
+  `sudo docker`)
+- An SMTP relay you can send through (see below) — optional, alerts are skipped
+  if unset
+- Outbound port **587** (STARTTLS) or **465** (implicit TLS) open for email
+
+---
+
+## Quick start (manual deploy on edu01)
 
 ```bash
-# From the repo, work inside the school edition
-cd school
+# 1. Clone into your home directory
+ssh <netid>@edu01.citg.tudelft.nl
+git clone https://github.com/TUDelft-MUDE/Mude_monitoring.git ~/Mude_monitoring
+cd ~/Mude_monitoring
 
-# Configure environment
+# 2. Configure secrets
 cp .env.example .env
 nano .env          # set SMTP_*, API_KEY, ALLOWED_ORIGINS, PUBLIC_URL
 
-# Edit who gets alerts and what to monitor
+# 3. Edit who gets alerts and what to monitor
 nano backend/alerts.json     # ["you@tudelft.nl", ...]
 nano backend/targets.json    # services to monitor
 
-# Build and run
-docker compose up -d --build
+# 4. Build, start, and health-check in one step
+./deploy.sh
 ```
 
-- Dashboard:      http://localhost:3000
-- Public status:  http://localhost:3000/status
-- Backend API:    http://localhost:3001/api
+`deploy.sh` is idempotent — re-run it any time to pull the latest code, rebuild,
+and restart. It waits for the backend `/health` endpoint before declaring
+success and prints `docker compose ps` at the end.
 
-Check the logs to confirm SMTP connected:
+- Dashboard:      http://127.0.0.1:3000  (via the reverse proxy in production)
+- Public status:  http://127.0.0.1:3000/status
+- Backend API:    http://127.0.0.1:3001/api
+- Health check:   http://127.0.0.1:3001/health
+
+Confirm the checker and mailer started:
 
 ```bash
 docker compose logs -f backend
 # [Mailer] SMTP ready (smtp.gmail.com) — recipients: you@tudelft.nl
+# Backend running on port 3001
 # Checker started — polling every 5 minutes
 ```
+
+---
+
+## CI/CD pipeline
+
+This repo ships a GitHub Actions workflow (`.github/workflows/deploy.yml`) with
+two jobs:
+
+1. **build** — runs on every push and PR. Installs and builds both the backend
+   (`tsc`) and frontend (`tsc && vite build`) on the runner so a broken build is
+   caught before it ever reaches the server.
+2. **deploy** — runs only on pushes to `main` (and manual *Run workflow*). It
+   SSHes to edu01 **through the `student-linux.tudelft.nl` jump host** and runs
+   `./deploy.sh`, cloning the repo first if needed.
+
+```
+GitHub runner ──SSH key──▶ student-linux.tudelft.nl  (public gateway)
+              ──tunnel───▶ edu01.citg.tudelft.nl     (internal)
+```
+
+`student-linux` is TU Delft's public SSH gateway, so the runner can reach it
+from the internet — that's how this avoids needing a VPN. TU Delft home
+directories are shared (NFS), so a **single** public key in
+`~/.ssh/authorized_keys` authenticates **both** hops with the same private key.
+
+### Secrets to configure
+
+In **Settings → Secrets and variables → Actions → Secrets tab** (NOT *Variables*
+— those are plaintext and would leak the key), add:
+
+| Secret | Value |
+|--------|-------|
+| `SSH_USER` | your NetID (e.g. `kwangjinlee`) |
+| `DEPLOY_SSH_KEY` | a **private** deploy key (PEM contents, multi-line) |
+
+Generate a dedicated deploy key and install its public half once:
+
+```bash
+# On your laptop — create a passphrase-less keypair for CI
+ssh-keygen -t ed25519 -f edu01_deploy -C "github-actions-deploy" -N ""
+
+# Append the PUBLIC key to authorized_keys on the gateway. Because home is
+# shared over NFS, this also authorizes edu01 with the same key:
+ssh-copy-id -i edu01_deploy.pub <netid>@student-linux.tudelft.nl
+# (If home is NOT shared, also run ssh-copy-id against edu01 from the gateway.)
+
+# Paste the PRIVATE key file (edu01_deploy, the whole file incl. BEGIN/END
+# lines) into the DEPLOY_SSH_KEY secret. Set SSH_USER to your NetID.
+```
+
+> **Never put your NetID password in GitHub.** Use the deploy key above. If your
+> account enforces 2FA on SSH, automated deploy won't work at all — register a
+> **self-hosted runner** on a campus machine, or just run `./deploy.sh` on edu01
+> manually (the build job still protects `main`).
 
 ---
 
@@ -100,12 +170,12 @@ docker compose logs -f backend
 
 ```bash
 # Terminal 1 — backend
-cd school/backend
+cd backend
 npm install
 SMTP_HOST=smtp.gmail.com SMTP_PORT=587 SMTP_USER=... SMTP_PASS=... npm run dev
 
 # Terminal 2 — frontend
-cd school/frontend
+cd frontend
 npm install
 npm run dev
 ```
@@ -115,7 +185,10 @@ still runs and the dashboard works normally.
 
 ---
 
-## Environment variables (`school/.env`)
+## Environment variables (`.env`)
+
+Copy `.env.example` to `.env` and fill in real values. `.env` is git-ignored —
+**never commit it.**
 
 ```env
 # SMTP email alerts (replaces AWS SNS)
@@ -125,38 +198,51 @@ SMTP_USER=your-account@gmail.com
 SMTP_PASS=your-app-password
 SMTP_FROM=MUDE Monitor <your-account@gmail.com>
 
-# Public base URL of the dashboard (used in alert links)
-PUBLIC_URL=https://mude-monitor.your-school.nl
+# Public base URL of the dashboard (used in alert links).
+# Dedicated vhost — the edu01 root already hosts another site.
+PUBLIC_URL=https://mude-monitoring.citg.tudelft.nl
 
 # API key — required to add/delete targets (openssl rand -hex 32)
 API_KEY=your-strong-random-key-here
 
 # CORS — comma-separated allowed frontend origins
-ALLOWED_ORIGINS=https://mude-monitor.your-school.nl
+ALLOWED_ORIGINS=https://mude-monitoring.citg.tudelft.nl
 
 # Microsoft Teams webhook (optional — omit to disable Teams alerts)
 TEAMS_WEBHOOK_URL=
 ```
 
-> Never commit `.env` — it is in `.gitignore`.
+### Why SMTP works on a school server
+
+The server does **not** run its own mail server. The Node app only makes an
+**outbound** connection to an SMTP relay. Two common options:
+
+1. **University SMTP relay** (e.g. `smtp.tudelft.nl:587`) — inside the campus
+   network this often needs no authentication, or your normal account login.
+2. **Gmail SMTP** (`smtp.gmail.com:587` + a 16-char
+   [app password](https://myaccount.google.com/apppasswords)) — works anywhere.
 
 ---
 
-## HTTPS on the school server
+## HTTPS — dedicated vhost on the host nginx
 
-If the campus already terminates TLS for you, just point its reverse proxy at
-`http://localhost:3000`. Otherwise, run a host nginx + Let's Encrypt:
+The Docker stack only binds `127.0.0.1:3000` (frontend) and `127.0.0.1:3001`
+(backend). Expose it through a **separate** host-nginx server block — the edu01
+root already serves another site, so use a dedicated name like
+`mude-monitoring.citg.tudelft.nl`.
+
+> **DNS first:** the subdomain must resolve to edu01's IP. If you don't control
+> citg DNS, request an A record (or CNAME → edu01) from the faculty IT before
+> the `server_name` below will work.
 
 ```bash
-sudo apt update && sudo apt install -y nginx certbot python3-certbot-nginx
-
-sudo tee /etc/nginx/sites-available/mude-monitor << 'EOF'
+sudo tee /etc/nginx/sites-available/mude-monitoring << 'EOF'
 server {
     listen 80;
-    server_name mude-monitor.your-school.nl;
+    server_name mude-monitoring.citg.tudelft.nl;
 
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -165,15 +251,22 @@ server {
 }
 EOF
 
-sudo ln -s /etc/nginx/sites-available/mude-monitor /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl restart nginx
-sudo certbot --nginx -d mude-monitor.your-school.nl
+sudo ln -s /etc/nginx/sites-available/mude-monitoring /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# Issue a cert for the new name (adds the 443 server block automatically):
+sudo certbot --nginx -d mude-monitoring.citg.tudelft.nl
 ```
 
-Then set `PUBLIC_URL` and `ALLOWED_ORIGINS` to the `https://` URL and restart:
+The docker frontend already proxies `/api/*` to the backend internally, so the
+host nginx only needs the single `location /` above. Name-based virtual hosting
+means this coexists with the existing edu01 site — no port conflict.
+
+`PUBLIC_URL` and `ALLOWED_ORIGINS` in `.env` are already set to the `https://`
+name; after DNS + cert are live just restart:
 
 ```bash
-docker compose down && docker compose up -d
+./deploy.sh
 ```
 
 ---
@@ -181,11 +274,8 @@ docker compose down && docker compose up -d
 ## Updating a running deployment
 
 ```bash
-cd school
-git pull
-docker compose down
-docker compose build --no-cache
-docker compose up -d
+cd ~/Mude_monitoring
+./deploy.sh          # git pull + rebuild + restart + health check
 ```
 
 The SQLite database lives in the `db_data` Docker volume and survives rebuilds.
@@ -200,8 +290,8 @@ The SQLite database lives in the `db_data` Docker volume and survives rebuilds.
 | `backend/alerts.json` | Email recipients for DOWN/UP alerts — plain list, no confirmation |
 | `backend/maintenance.json` | Maintenance windows during which alerts are suppressed |
 
-Changes to these require a redeploy (`docker compose up -d --build`). Targets
-added through the dashboard UI are stored in the database and persist.
+Changes to these require a redeploy (`./deploy.sh`). Targets added through the
+dashboard UI are stored in the database and persist.
 
 ---
 
