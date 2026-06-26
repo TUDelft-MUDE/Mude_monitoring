@@ -40,12 +40,12 @@ the new list takes effect. (If the file is ever empty, it falls back to the
 ## Architecture
 
 ```
-Browser
+Browser (HTTPS)
   │
   │  didata-nginx container — owns host ports 80/443 (shared reverse proxy)
   │    ├── server_name edu01.citg.tudelft.nl              → didata site
-  │    └── server_name mude-monitoring.citg.tudelft.nl    → proxy → 172.17.0.1:3000
-  │         (172.17.0.1 = Docker bridge gateway = our frontend, published on the host)
+  │    └── server_name mude-monitoring.citg.tudelft.nl    → TLS (ICT cert) → proxy → 172.17.0.1:3000
+  │         (HTTP :80 redirects to HTTPS; 172.17.0.1 = Docker bridge gateway = our frontend)
   │
   │  Docker: our frontend nginx (host 127.0.0.1:3000 + 172.17.0.1:3000)
   │    ├── GET /           → React dashboard (admin, API key required for writes)
@@ -58,8 +58,7 @@ Browser
         ├── Email (SMTP)     (alerts)
         └── Teams webhook    (optional)
 
-Deployment: TU Delft Linux server (edu01.citg.tudelft.nl) — http://mude-monitoring.citg.tudelft.nl
-            (HTTPS pending an ICT-issued cert for this domain — see HTTPS setup below)
+Deployment: TU Delft Linux server (edu01.citg.tudelft.nl) — https://mude-monitoring.citg.tudelft.nl
 CI/CD:      GitHub Actions self-hosted runner on edu01 → docker compose up
 Reverse proxy: the existing didata-nginx container, NOT a host nginx (see deploy/nginx)
 ```
@@ -193,18 +192,18 @@ sudo docker exec didata-nginx-1 nginx -s reload
 
 ### HTTPS
 
-Currently the site is served over **HTTP only**. The certificate mounted in `didata-nginx` is for `edu01.citg.tudelft.nl` and does not cover `mude-monitoring.citg.tudelft.nl` (Let's Encrypt is not used here — `edu01` is fronted by a container and ports 587/465 and the cert lifecycle are managed by TU Delft ICT).
+HTTPS is **live**. Let's Encrypt/certbot is not used — TU Delft ICT issued an institutional certificate for `mude-monitoring.citg.tudelft.nl` and auto-renews it (their renewal hook runs `docker restart didata-nginx-1`). The cert/key live on the host at:
 
-To enable HTTPS:
-1. Request a TLS certificate for `mude-monitoring.citg.tudelft.nl` from TU Delft ICT (DNS is already a CNAME to `edu01`).
-2. Place the cert/key on the host and add bind mounts to the didata compose service (same pattern as the existing `edu01.citg.tudelft.nl.crt`/`.key` mounts).
-3. Switch the proxy block to the commented HTTPS variant in [deploy/nginx/mude-monitoring.conf](deploy/nginx/mude-monitoring.conf), reload `didata-nginx`, then update `.env` and restart:
-
-```bash
-sed -i 's|PUBLIC_URL=.*|PUBLIC_URL=https://mude-monitoring.citg.tudelft.nl|' .env
-sed -i 's|ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=https://mude-monitoring.citg.tudelft.nl|' .env
-docker compose down && docker compose up -d
 ```
+/etc/ssl/certs/mude-monitoring.citg.tudelft.nl.crt
+/etc/ssl/private/mude-monitoring.citg.tudelft.nl.key
+```
+
+They are bind-mounted into the didata-nginx container by **its real compose file**, `/var/web_server/htdocs/didata/docker-compose.yml` (the nginx service — same single-file `:ro` pattern as the existing `edu01` cert). The `default.conf` block redirects `:80` → `:443` and terminates TLS on `:443`, proxying to `http://172.17.0.1:3000`. See [deploy/nginx/mude-monitoring.conf](deploy/nginx/mude-monitoring.conf) for the exact server block.
+
+> Note: `/var/web_server/htdocs/didata/docker-compose.yml` is the compose that actually created `didata-nginx-1` (confirmed via its `com.docker.compose.project.config_files` label) — **not** the stale `website_docker_configuration/docker-compose.yml`. Adding a cert mount requires recreating the nginx service (`cd /var/web_server/htdocs/didata && sudo docker compose up -d nginx`); config-only changes to `default.conf` just need `sudo docker exec didata-nginx-1 nginx -s reload`.
+
+To request a renewed/new cert in the future, ask TU Delft ICT; once delivered, `PUBLIC_URL` and `ALLOWED_ORIGINS` in `.env` already point at `https://…` so no app change is needed.
 
 ### CI/CD (self-hosted GitHub Actions runner)
 
@@ -336,15 +335,32 @@ Base URL: `https://mude-monitoring.citg.tudelft.nl/api`
 
 ## Dashboard Usage
 
-### Setting the API key
+### The API key — generate, configure, use
 
-The dashboard is publicly viewable. To add or delete targets, set your API key:
+Reading the dashboard and the public status page needs no key. The key only gates **write** actions (adding/deleting monitored targets). There is one shared key, stored server-side in `.env`.
 
-1. Click the **🔓 Set API key** button (top right)
-2. Enter your `API_KEY` value from `.env`
-3. Click **Save** — the key is stored in `localStorage`
+**1. Generate a key** (any long random string; on the server or your laptop):
 
-The button turns green (🔒 **Key set**) when a key is configured. The key is never sent to any endpoint other than the backend API.
+```bash
+openssl rand -hex 32
+```
+
+**2. Configure it on the server** — put the generated value in `.env`, then restart so the backend picks it up:
+
+```bash
+cd ~/Mude_monitoring
+nano .env                 # set: API_KEY=<the value from step 1>
+docker compose up -d      # restart with the new key
+```
+
+> If `API_KEY` is left empty/unset, the backend runs in **open mode** — anyone can add/delete targets. Always set a key in production.
+
+**3. Use it in the dashboard** (each admin enters it once, in their browser):
+
+1. Open `https://mude-monitoring.citg.tudelft.nl` and click **🔓 Set API key** (top right).
+2. Paste the same `API_KEY` value from `.env` and click **Save**.
+
+The key is stored in that browser's `localStorage` and sent only as the `X-Api-Key` header to the backend API. The button turns green (🔒 **Key set**) once configured. To rotate the key: change `API_KEY` in `.env`, `docker compose up -d`, and have each admin re-enter the new value.
 
 ### Adding a target
 
