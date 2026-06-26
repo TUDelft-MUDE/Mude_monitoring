@@ -22,25 +22,28 @@ Uptime monitoring dashboard for TU Delft MUDE course infrastructure. Checks HTTP
 ## Architecture
 
 ```
-Browser (HTTPS only)
+Browser
   │
-  │  Host nginx — Let's Encrypt TLS (port 443)
-  │    ├── HTTP 80 → redirect to HTTPS
-  │    └── HTTPS 443 → proxy → localhost:3000
+  │  didata-nginx container — owns host ports 80/443 (shared reverse proxy)
+  │    ├── server_name edu01.citg.tudelft.nl              → didata site
+  │    └── server_name mude-monitoring.citg.tudelft.nl    → proxy → 172.17.0.1:3000
+  │         (172.17.0.1 = Docker bridge gateway = our frontend, published on the host)
   │
-  │  Docker: nginx (localhost:3000, internal only)
+  │  Docker: our frontend nginx (host 127.0.0.1:3000 + 172.17.0.1:3000)
   │    ├── GET /           → React dashboard (admin, API key required for writes)
   │    ├── GET /status     → React public status page (read-only)
-  │    └── /api/*          → proxy → Express backend (localhost:3001, internal only)
+  │    └── /api/*          → proxy → Express backend (service "backend:3001", internal)
   │
-  └── Docker: Express API (localhost:3001, internal only)
+  └── Docker: Express API (host 127.0.0.1:3001, internal only)
         ├── SQLite database  (/app/data/monitoring.db, persisted via Docker volume)
         ├── Cron checker     (runs every 5 minutes)
         ├── Email (SMTP)     (alerts)
         └── Teams webhook    (optional)
 
-Deployment: TU Delft Linux server (edu01.citg.tudelft.nl) — https://mude-monitoring.citg.tudelft.nl
+Deployment: TU Delft Linux server (edu01.citg.tudelft.nl) — http://mude-monitoring.citg.tudelft.nl
+            (HTTPS pending an ICT-issued cert for this domain — see HTTPS setup below)
 CI/CD:      GitHub Actions self-hosted runner on edu01 → docker compose up
+Reverse proxy: the existing didata-nginx container, NOT a host nginx (see deploy/nginx)
 ```
 
 ---
@@ -72,7 +75,7 @@ mude-monitoring/
 │   └── Dockerfile
 ├── deploy/
 │   └── nginx/
-│       └── mude-monitoring.conf  # Host nginx vhost for edu01 (proxy → localhost:3000)
+│       └── mude-monitoring.conf  # Reference reverse-proxy block (added to didata-nginx; see file header)
 ├── docker-compose.yml
 └── .github/workflows/deploy.yml
 ```
@@ -152,32 +155,37 @@ nano .env
 docker compose up -d --build
 ```
 
-### HTTPS setup (Let's Encrypt via certbot)
+### Reverse proxy (didata-nginx container)
 
-The repo ships a host nginx vhost at [deploy/nginx/mude-monitoring.conf](deploy/nginx/mude-monitoring.conf) that proxies `mude-monitoring.citg.tudelft.nl` to the Docker frontend on `127.0.0.1:3000`. This is a separate file from any existing site config on the host root, so it won't interfere with other services on `edu01`.
+On `edu01` the public entry point for ports 80/443 is **not** a host nginx — those ports are owned by an existing Docker container, `didata-nginx-1`. Its config is the host file `/var/web_server/website_docker_configuration/default.conf` (mounted into the container as `/etc/nginx/conf.d/default.conf`).
+
+To route our domain, add the `server_name mude-monitoring.citg.tudelft.nl` block from [deploy/nginx/mude-monitoring.conf](deploy/nginx/mude-monitoring.conf) to that file. It proxies to `http://172.17.0.1:3000` — the Docker bridge gateway, where our frontend is published (see `docker-compose.yml`: the frontend binds both `127.0.0.1:3000` and `172.17.0.1:3000` so the container-based proxy can reach it).
 
 ```bash
-# Install certbot (host nginx + certbot are expected to already be managed on edu01)
-sudo apt update && sudo apt install -y certbot python3-certbot-nginx
+# Back up first — this is shared didata infra
+sudo cp /var/web_server/website_docker_configuration/default.conf ~/didata-default.conf.bak
 
-# Install the vhost
-sudo cp ~/Mude_monitoring/deploy/nginx/mude-monitoring.conf /etc/nginx/sites-available/mude-monitoring
-sudo ln -s /etc/nginx/sites-available/mude-monitoring /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-
-# Issue certificate (certbot auto-configures HTTPS + HTTP redirect)
-sudo certbot --nginx -d mude-monitoring.citg.tudelft.nl --preferred-challenges http
+# Add our server block (see deploy/nginx/mude-monitoring.conf), then:
+sudo docker exec didata-nginx-1 nginx -t
+sudo docker exec didata-nginx-1 nginx -s reload
 ```
 
-Update `.env` to use the HTTPS URL, then restart:
+> ⚠️ This manual edit lives on the server only — it is **not** in this repo and **not** applied by the CI/CD runner. `deploy/nginx/mude-monitoring.conf` is the version-controlled reference for what that block should contain.
+
+### HTTPS
+
+Currently the site is served over **HTTP only**. The certificate mounted in `didata-nginx` is for `edu01.citg.tudelft.nl` and does not cover `mude-monitoring.citg.tudelft.nl` (Let's Encrypt is not used here — `edu01` is fronted by a container and ports 587/465 and the cert lifecycle are managed by TU Delft ICT).
+
+To enable HTTPS:
+1. Request a TLS certificate for `mude-monitoring.citg.tudelft.nl` from TU Delft ICT (DNS is already a CNAME to `edu01`).
+2. Place the cert/key on the host and add bind mounts to the didata compose service (same pattern as the existing `edu01.citg.tudelft.nl.crt`/`.key` mounts).
+3. Switch the proxy block to the commented HTTPS variant in [deploy/nginx/mude-monitoring.conf](deploy/nginx/mude-monitoring.conf), reload `didata-nginx`, then update `.env` and restart:
 
 ```bash
 sed -i 's|PUBLIC_URL=.*|PUBLIC_URL=https://mude-monitoring.citg.tudelft.nl|' .env
 sed -i 's|ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=https://mude-monitoring.citg.tudelft.nl|' .env
 docker compose down && docker compose up -d
 ```
-
-Certificates renew automatically via a certbot cron job (expires every 90 days).
 
 ### CI/CD (self-hosted GitHub Actions runner)
 
