@@ -19,6 +19,24 @@ Uptime monitoring dashboard for TU Delft MUDE course infrastructure. Checks HTTP
 
 ---
 
+## Who gets the alert emails (no setup knowledge needed)
+
+The list of people who receive "site is DOWN / recovered" emails lives in one
+plain file: **[`backend/recipients.txt`](backend/recipients.txt)** — one email
+address per line.
+
+To change it, you do **not** need to log into the server or understand `.env`:
+
+1. Open [`backend/recipients.txt`](backend/recipients.txt) on GitHub and click the ✏️ (Edit) button.
+2. Add a line for each new person, or delete a line to remove someone. Lines starting with `#` are notes and are ignored.
+3. Click **Commit changes**.
+
+That's it — the dashboard redeploys itself automatically within a few minutes and
+the new list takes effect. (If the file is ever empty, it falls back to the
+`ALERT_EMAIL_TO` value in `.env`.)
+
+---
+
 ## Architecture
 
 ```
@@ -61,6 +79,7 @@ mude-monitoring/
 │   │   ├── email.ts          # SMTP email alerts (nodemailer)
 │   │   └── middleware.ts     # API key auth + rate limiters
 │   ├── targets.json          # Seed targets (INSERT OR IGNORE on startup)
+│   ├── recipients.txt        # Alert email recipients (edit on GitHub — one per line)
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/

@@ -1,0 +1,14 @@
+# MUDE Monitor — alert recipients
+#
+# Who gets the "site is DOWN / recovered" emails.
+# One email address per line. That's it.
+#
+# - Lines starting with #  are notes and are ignored.
+# - Blank lines are ignored.
+# - To add someone: write their email on a new line.
+# - To remove someone: delete their line (or put a # in front of it).
+#
+# After saving, commit the change ("Commit changes" button on GitHub).
+# The dashboard updates itself automatically within a few minutes.
+
+klee3@tudelft.nl

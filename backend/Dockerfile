@@ -23,6 +23,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY package.json ./
 COPY targets.json ./
 COPY maintenance.json ./
+COPY recipients.txt ./
 
 EXPOSE 3001
 
