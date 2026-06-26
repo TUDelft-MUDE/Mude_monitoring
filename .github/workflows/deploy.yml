@@ -16,7 +16,7 @@ jobs:
       - name: Pull latest code and redeploy
         run: |
           set -e
-          cd "$HOME/mude-monitoring"
+          cd "$HOME/Mude_monitoring"
 
           git fetch --all --prune
           git reset --hard origin/main

@@ -94,7 +94,7 @@ mude-monitoring/
 
 ```bash
 git clone <repo-url>
-cd mude-monitoring
+cd Mude_monitoring
 
 cd backend && npm install && cd ..
 cd frontend && npm install && cd ..
@@ -142,8 +142,8 @@ DNS: `mude-monitoring.citg.tudelft.nl` is a CNAME pointing to `edu01.citg.tudelf
 ssh <netid>@edu01.citg.tudelft.nl
 
 # Clone repo
-git clone <repo-url> ~/mude-monitoring
-cd ~/mude-monitoring
+git clone <repo-url> ~/Mude_monitoring
+cd ~/Mude_monitoring
 
 # Create .env (see Environment Variables below)
 nano .env
@@ -161,7 +161,7 @@ The repo ships a host nginx vhost at [deploy/nginx/mude-monitoring.conf](deploy/
 sudo apt update && sudo apt install -y certbot python3-certbot-nginx
 
 # Install the vhost
-sudo cp ~/mude-monitoring/deploy/nginx/mude-monitoring.conf /etc/nginx/sites-available/mude-monitoring
+sudo cp ~/Mude_monitoring/deploy/nginx/mude-monitoring.conf /etc/nginx/sites-available/mude-monitoring
 sudo ln -s /etc/nginx/sites-available/mude-monitoring /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 
@@ -187,7 +187,7 @@ Because `edu01` is not reachable via inbound SSH from GitHub's cloud runners, de
 
 1. On GitHub: repo → **Settings → Actions → Runners → New self-hosted runner** (Linux x64). GitHub shows a download URL, a `config.sh` command, and a registration token.
 
-2. On edu01, install under the **same user** that owns `~/mude-monitoring`:
+2. On edu01, install under the **same user** that owns `~/Mude_monitoring`:
 
    ```bash
    mkdir -p ~/actions-runner && cd ~/actions-runner
@@ -213,7 +213,7 @@ Because `edu01` is not reachable via inbound SSH from GitHub's cloud runners, de
    ```
 
 **The deploy workflow** ([.github/workflows/deploy.yml](.github/workflows/deploy.yml)) then, on every push to `main`:
-1. `git fetch --all --prune && git reset --hard origin/main` in `~/mude-monitoring`
+1. `git fetch --all --prune && git reset --hard origin/main` in `~/Mude_monitoring`
 2. `docker compose up -d --build`
 3. `docker image prune -f`
 
