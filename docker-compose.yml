@@ -27,7 +27,11 @@ services:
     build: ./frontend
     restart: unless-stopped
     ports:
+      # Loopback for local debugging on the host
       - "127.0.0.1:3000:3000"
+      # Docker bridge gateway so the host's didata-nginx reverse proxy
+      # (which fronts ports 80/443) can reach this SPA via http://172.17.0.1:3000
+      - "172.17.0.1:3000:3000"
     depends_on:
       - backend
 

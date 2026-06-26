@@ -8,8 +8,6 @@ type MaintenanceWindow = {
   timezone?: string; // e.g. "Europe/Amsterdam"
 };
 
-export type ActiveWindow = MaintenanceWindow & { active: true };
-
 export const getActiveMaintenanceWindow = (): MaintenanceWindow | null => {
   const now = new Date();
 
