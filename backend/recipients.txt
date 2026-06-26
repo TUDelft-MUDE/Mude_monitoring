@@ -12,3 +12,4 @@
 # The dashboard updates itself automatically within a few minutes.
 
 klee3@tudelft.nl
+K.Lee-5@student.tudelft.nl
