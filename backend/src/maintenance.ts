@@ -1,5 +1,4 @@
-import fs from "fs";
-import path from "path";
+import maintenanceConfig from "../maintenance.json";
 
 type MaintenanceWindow = {
   description: string;
@@ -11,22 +10,10 @@ type MaintenanceWindow = {
 
 export type ActiveWindow = MaintenanceWindow & { active: true };
 
-// Read maintenance.json at runtime (consistent with targets.json / alerts.json)
-const loadWindows = (): MaintenanceWindow[] => {
-  const file = path.join(__dirname, "../maintenance.json");
-  try {
-    const config = JSON.parse(fs.readFileSync(file, "utf-8"));
-    return (config.windows ?? []) as MaintenanceWindow[];
-  } catch (err) {
-    console.error("[Maintenance] Failed to read maintenance.json:", err);
-    return [];
-  }
-};
-
 export const getActiveMaintenanceWindow = (): MaintenanceWindow | null => {
   const now = new Date();
 
-  const active = loadWindows().find((w) => {
+  const active = (maintenanceConfig.windows as MaintenanceWindow[]).find((w) => {
     const tz = w.timezone ?? "UTC";
     const localDate = new Date(now.toLocaleString("en-US", { timeZone: tz }));
     const day = localDate.getDay();
@@ -41,4 +28,5 @@ export const getActiveMaintenanceWindow = (): MaintenanceWindow | null => {
   return active ?? null;
 };
 
-export const getAllWindows = (): MaintenanceWindow[] => loadWindows();
+export const getAllWindows = (): MaintenanceWindow[] =>
+  maintenanceConfig.windows as MaintenanceWindow[];

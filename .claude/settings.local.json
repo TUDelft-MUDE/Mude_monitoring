@@ -1,27 +1,20 @@
 {
   "permissions": {
     "allow": [
+      "Bash(aws --version)",
+      "Bash(terraform --version)",
       "Bash(docker --version)",
-      "Bash(npm ci *)",
+      "Bash(aws sts *)",
+      "Bash(terraform output *)",
+      "Bash(terraform state *)",
+      "Bash(git rm *)",
+      "Bash(rm -rf terraform)",
+      "Bash(npx tsc *)",
       "Bash(npm run *)",
-      "Bash(echo \"BACKEND_BUILD_EXIT=$?\")",
-      "Bash(echo \"FRONTEND_BUILD_EXIT=$?\")",
-      "Bash(DB_PATH=/tmp/smoke_test.db PORT=3009 timeout 8 node dist/index.js)",
-      "Bash(chmod +x deploy.sh)",
-      "Bash(bash -n deploy.sh)",
-      "Bash(python3 -c \"import yaml,sys; yaml.safe_load\\(open\\('.github/workflows/deploy.yml'\\)\\); print\\('workflow YAML valid'\\)\")",
-      "Bash(python3 -c \"import yaml; yaml.safe_load\\(open\\('.github/workflows/deploy.yml'\\)\\); print\\('workflow YAML valid'\\)\")",
-      "Bash(tar --exclude='./.git' --exclude='node_modules' --exclude='dist' --exclude='.DS_Store' --exclude='*.db' --exclude='.claude' -czf /tmp/mude_deploy.tgz .)",
-      "Read(//tmp/**)",
-      "Bash(tar tzf *)",
-      "Bash(grep -E '\\\\.\\(sh|yml|example|json|ts|tsx\\)$|Dockerfile')",
-      "Bash(cat ~/.ssh/config 2>/dev/null && echo \"---EXISTS---\" || echo \"NO ~/.ssh/config YET\")",
-      "Bash(dig +short edu01.citg.tudelft.nl A)",
-      "Bash(nslookup edu01.citg.tudelft.nl)",
-      "Bash(dig +short mude-monitoring.citg.tudelft.nl)",
-      "Bash(/usr/bin/python3 -c \"import yaml,sys; d=yaml.safe_load\\(open\\('.github/workflows/deploy.yml'\\)\\); print\\('YAML valid; deploy runs-on:', d['jobs']['deploy']['runs-on']\\)\")",
-      "Bash(npx --yes js-yaml .github/workflows/deploy.yml)",
-      "Bash(sed -n '35,60p' .github/workflows/deploy.yml)"
+      "PowerShell(cd backend; Get-ChildItem -Recurse dist -ErrorAction SilentlyContinue | Select-Object FullName; Write-Output \"---package.json build script---\"; \\(Get-Content package.json | ConvertFrom-Json\\).scripts)",
+      "Bash(npm install *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(cd \"/c/Users/lkdmc/Desktop/Mude Monitoring\" && echo \"=== stale refs in tracked source/docs \\(excluding lockfile\\) ===\" && grep -rniE \"duckdns|EC2|SNS|terraform|DEPLOY_HOST|DEPLOY_SSH\" --include=*.md --include=*.ts --include=*.yml --include=*.yaml --include=Dockerfile . 2>/dev/null | grep -v node_modules; echo \"--- \\(empty above = clean\\) ---\"; echo \"=== build ===\" && cd backend && npm run build >/dev/null 2>&1 && echo \"build OK\" || echo \"build FAILED\")"
     ]
   }
 }

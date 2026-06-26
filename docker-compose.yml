@@ -9,16 +9,18 @@ services:
     environment:
       - PORT=3001
       - DB_PATH=/app/data/monitoring.db
-      # SMTP email alerts (replaces AWS SNS)
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_PORT=${SMTP_PORT}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASS=${SMTP_PASS}
-      - SMTP_FROM=${SMTP_FROM}
-      # Public base URL of the dashboard (used in alert links)
       - PUBLIC_URL=${PUBLIC_URL}
       - API_KEY=${API_KEY}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      # Email alerts (TU Delft SMTP relay)
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_SECURE=${SMTP_SECURE}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - ALERT_EMAIL_FROM=${ALERT_EMAIL_FROM}
+      - ALERT_EMAIL_TO=${ALERT_EMAIL_TO}
+      # Teams alerts (optional — leave unset to disable)
       - TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_URL}
 
   frontend:

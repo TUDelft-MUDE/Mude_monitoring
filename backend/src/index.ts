@@ -4,7 +4,6 @@ import rateLimit from "express-rate-limit";
 import { initDb } from "./db";
 import router from "./routes";
 import { startChecker } from "./checker";
-import { verifyMailer } from "./mailer";
 
 const PORT = process.env.PORT || 3001;
 
@@ -34,7 +33,6 @@ const globalLimiter = rateLimit({
 // ── Server ────────────────────────────────────────────────────────
 const main = async () => {
   await initDb();
-  await verifyMailer();
 
   const app = express();
   app.use(cors(corsOptions));

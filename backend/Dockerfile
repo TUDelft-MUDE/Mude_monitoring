@@ -7,7 +7,6 @@ RUN npm ci
 
 COPY tsconfig.json ./
 COPY targets.json ./
-COPY alerts.json ./
 COPY maintenance.json ./
 COPY src ./src
 
@@ -23,7 +22,6 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY package.json ./
 COPY targets.json ./
-COPY alerts.json ./
 COPY maintenance.json ./
 
 EXPOSE 3001

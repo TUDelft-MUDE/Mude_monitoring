@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import { getAllTargets, insertCheck, getLastTwoChecks } from "./db";
 import { getActiveMaintenanceWindow } from "./maintenance";
-import { sendEmailAlert } from "./mailer";
+import { sendEmailAlert } from "./email";
 
 type Target = { id: number; name: string; url: string };
 
@@ -63,6 +63,8 @@ const sendAlert = async (
     );
     return;
   }
+  // Each channel no-ops when its own config is missing, so email and Teams
+  // can be enabled independently.
   await Promise.all([
     sendEmailAlert(name, url, type),
     sendTeamsAlert(name, url, type),
